@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PORINOI | ARCHITECT S8.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        --bg: #020204;
+        --accent: #6366f1;
+        --sidebar-w: 280px;
+      }
+      body {
+        font-family: "Plus Jakarta Sans", sans-serif;
+        background: var(--bg);
+        color: #e2e8f0;
+        overflow: hidden;
+        height: 100vh;
+      }
+      .mono {
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      /* --- UI COMPONENTS --- */
+      #sidebar {
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        width: var(--sidebar-w);
+        z-index: 50;
+      }
+      #sidebar.collapsed {
+        width: 0px;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-20px);
+      }
+
+      .page-view {
+        display: none;
+        height: 100%;
+        width: 100%;
+        opacity: 0;
+      }
+      .page-view.active {
+        display: flex;
+        flex-direction: column;
+        opacity: 1;
+      }
+
+      .kanban-col {
+        flex: 1;
+        transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+        background: rgba(255, 255, 255, 0.01);
+        border: 1px solid rgba(255, 255, 255, 0.03);
+        border-radius: 24px;
+        min-width: 320px;
+      }
+      .kanban-col.expanded {
+        flex: 5;
+        background: rgba(99, 102, 241, 0.04);
+        border-color: var(--accent);
+      }
+      .kanban-col.hidden-col {
+        flex: 0;
+        min-width: 0;
+        opacity: 0;
+        margin: 0;
+        padding: 0;
+        pointer-events: none;
+        border: none;
+      }
+
+      .task-card {
+        background: #0d0d14;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 1.25rem;
+        border-radius: 20px;
+        margin-bottom: 1rem;
+        cursor: grab;
+        transition: 0.3s ease;
+      }
+      .task-card:hover {
+        border-color: var(--accent);
+        transform: scale(1.02);
+        box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+      }
+
+      .glass-header {
+        background: rgba(2, 2, 4, 0.85);
+        backdrop-filter: blur(24px);
+        z-index: 40;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      }
+      .scroll-v {
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+        height: 100%;
+      }
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+      }
+
+      .terminal-hidden #log-terminal {
+        height: 0;
+        padding: 0;
+        border: none;
+        opacity: 0;
+      }
+      #log-terminal {
+        height: 180px;
+        background: #050508;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 12px 24px;
+        transition: all 0.4s;
+        z-index: 60;
+      }
+
+      /* Pulse for New Alerts */
+      .badge-pulse {
+        position: relative;
+      }
+      .badge-pulse::after {
+        content: "";
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
+        }
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 10px rgba(99, 102, 241, 0);
+        }
+        100% {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+        }
+      }
+
+      /* FEATURE: Neural Background */
+      #neural-canvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.3;
+      }
+      
+      /* FEATURE: Search bar styling */
+      .search-node {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.05);
+        transition: all 0.3s;
+      }
+      .search-node:focus {
+        border-color: var(--accent);
+        background: rgba(99, 102, 241, 0.05);
+      }
+
+    </style>
+  </head>
+  <body class="flex flex-col h-screen overflow-hidden">
+    <canvas id="neural-canvas"></canvas>
+
+    <div class="flex flex-1 min-h-0 overflow-hidden relative z-10">
+      <aside
+        id="sidebar"
+        class="bg-[#050508] border-r border-white/5 flex flex-col shrink-0"
+      >
+        <div class="p-8">
+          <div class="flex items-center gap-4 mb-10">
+            <div
+              class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center font-black text-white shadow-xl"
+            >
+              P
+            </div>
+            <span class="font-black text-xl tracking-tighter">PORINOI_HQ</span>
+          </div>
+
+          <div class="space-y-6">
+            <div>
+              <p
+                class="text-[9px] mono text-slate-500 uppercase tracking-[0.2em] mb-4"
+              >
+                Master_Control
+              </p>
+              <nav class="space-y-1">
+                <div
+                  onclick="navigateTo('dashboard')"
+                  id="nav-dashboard"
+                  class="p-3 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-white/5 transition text-slate-400"
+                >
+                  <span class="text-lg">📊</span
+                  ><span
+                    class="mono text-[10px] font-bold uppercase tracking-widest"
+                    >Dashboard</span
+                  >
+                </div>
+                <div
+                  onclick="navigateTo('kanban')"
+                  id="nav-kanban"
+                  class="p-3 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-white/5 transition text-slate-400"
+                >
+                  <span class="text-lg">📋</span
+                  ><span
+                    class="mono text-[10px] font-bold uppercase tracking-widest"
+                    >Workspace</span
+                  >
+                </div>
+              </nav>
+            </div>
+
+            <div>
+              <div class="flex justify-between items-center mb-4">
+                <p
+                  class="text-[9px] mono text-slate-500 uppercase tracking-[0.2em]"
+                >
+                  Environments
+                </p>
+                <button
+                  onclick="openPModal()"
+                  class="text-indigo-500 text-xs hover:text-white"
+                >
+                  +
+                </button>
+              </div>
+              <div id="project-list" class="space-y-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-auto p-8 border-t border-white/5">
+          <div class="p-4 bg-white/5 rounded-2xl border border-white/5">
+            <p class="text-[9px] mono text-indigo-400 mb-1 text-center">SESSION_ACTIVE</p>
+            <div id="session-timer" class="text-xl font-black mono text-white text-center">
+              00:00:00
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="flex-1 flex flex-col min-w-0 relative bg-[#020204]">
+        <header
+          class="glass-header px-10 py-6 flex justify-between items-center shrink-0"
+        >
+          <div class="flex items-center gap-6">
+            <button
+              onclick="toggleSidebar()"
+              class="w-10 h-10 rounded-xl border border-white/5 flex items-center justify-center text-slate-400 hover:text-white transition hover:bg-white/5"
+            >
+              ☰
+            </button>
+            <div>
+              <h1
+                id="page-title"
+                class="text-xl font-black text-white tracking-tight uppercase"
+              >
+                Dashboard
+              </h1>
+              <p
+                id="proj-display"
+                class="text-[8px] mono text-indigo-400 uppercase tracking-[0.3em]"
+              >
+                PROJ: NULL_SET
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-4">
+            <div id="save-indicator" class="mono text-[8px] text-indigo-500 opacity-0 transition-opacity">SYNC_COMPLETE</div>
+            
+            <div
+              class="hidden md:flex items-center gap-2 px-4 py-2 bg-white/5 rounded-xl border border-white/5"
+            >
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span class="mono text-[9px] text-slate-400 uppercase"
+                >System_Optimal</span
+              >
+            </div>
+            <button
+              onclick="toggleTerminal()"
+              class="w-10 h-10 rounded-xl border border-white/5 flex items-center justify-center text-slate-500 hover:text-white transition"
+            >
+              ⌨
+            </button>
+            <button
+              onclick="openFModal()"
+              class="bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/30"
+            >
+              + ADD_NODE
+            </button>
+          </div>
+        </header>
+
+        <div class="flex-1 p-8 overflow-y-auto overflow-x-hidden relative">
+          <section id="page-dashboard" class="page-view">
+            <div class="grid grid-cols-12 gap-6 h-full">
+              <div class="col-span-12 lg:col-span-4 space-y-6">
+                <div
+                  class="bg-[#08080c] border border-white/5 rounded-[32px] p-8 flex flex-col items-center"
+                >
+                  <div class="w-full max-w-[180px]">
+                    <canvas id="gaugeChart"></canvas>
+                  </div>
+                  <h2
+                    class="text-5xl font-black text-white mt-4"
+                    id="velocity-val"
+                  >
+                    0%
+                  </h2>
+                  <p class="text-[9px] mono text-slate-500 uppercase mt-2">
+                    Core_Deployment_Index
+                  </p>
+                </div>
+                <div
+                  class="bg-[#08080c] border border-white/5 rounded-[32px] p-6"
+                >
+                  <p class="mono text-[9px] uppercase text-slate-500 mb-4 tracking-widest">Neural_Activity_Heatmap</p>
+                  <div class="grid grid-cols-7 gap-2" id="activity-grid">
+                    </div>
+                </div>
+                <div
+                  class="bg-indigo-600 rounded-[32px] p-8 text-white relative overflow-hidden"
+                >
+                  <div class="relative z-10">
+                    <p class="mono text-[9px] uppercase opacity-70 mb-2">
+                      Network_Status
+                    </p>
+                    <h3 class="text-2xl font-black leading-tight">
+                      All Porinoi Nodes<br />Are Synchronized.
+                    </h3>
+                  </div>
+                  <div class="absolute -right-4 -bottom-4 text-8xl opacity-10">
+                    📡
+                  </div>
+                </div>
+              </div>
+              <div
+                class="col-span-12 lg:col-span-8 bg-[#08080c] border border-white/5 rounded-[32px] p-10 flex flex-col"
+              >
+                <div class="flex justify-between items-center mb-10">
+                  <p
+                    class="text-[10px] mono text-slate-500 uppercase tracking-widest"
+                  >
+                    Resource_Breakdown
+                  </p>
+                  <div class="flex gap-2">
+                    <span class="w-3 h-3 rounded-full bg-slate-700"></span>
+                    <span class="w-3 h-3 rounded-full bg-indigo-500"></span>
+                    <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                  </div>
+                </div>
+                <div id="stats-bars" class="space-y-10 scroll-v pr-4"></div>
+              </div>
+            </div>
+          </section>
+
+          <section id="page-kanban" class="page-view">
+            <div class="mb-6 flex gap-4">
+               <input type="text" id="node-search" oninput="filterNodes()" placeholder="FILTER_NODES_BY_ID_OR_TAG..." class="search-node flex-1 px-6 py-3 rounded-2xl mono text-[10px] text-white outline-none">
+            </div>
+
+            <div
+              class="flex gap-6 h-full overflow-x-auto pb-4"
+              id="kanban-grid"
+            >
+              <div class="kanban-col" id="col-todo">
+                <div
+                  class="p-6 border-b border-white/5 flex justify-between items-center"
+                >
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-slate-600"></span>
+                    <span
+                      class="text-[10px] mono font-bold text-slate-400 uppercase"
+                      >Backlog</span
+                    >
+                  </div>
+                  <button
+                    onclick="expandCol('todo')"
+                    class="text-slate-600 hover:text-white text-xs transition"
+                  >
+                    ⛶
+                  </button>
+                </div>
+                <div id="todo" class="scroll-v p-6 drop-zone"></div>
+              </div>
+              <div class="kanban-col" id="col-progress">
+                <div
+                  class="p-6 border-b border-white/5 flex justify-between items-center"
+                >
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                    <span
+                      class="text-[10px] mono font-bold text-indigo-400 uppercase"
+                      >In_Dev</span
+                    >
+                  </div>
+                  <button
+                    onclick="expandCol('progress')"
+                    class="text-slate-600 hover:text-white text-xs transition"
+                  >
+                    ⛶
+                  </button>
+                </div>
+                <div id="progress" class="scroll-v p-6 drop-zone"></div>
+              </div>
+              <div class="kanban-col" id="col-done">
+                <div
+                  class="p-6 border-b border-white/5 flex justify-between items-center"
+                >
+                  <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span
+                      class="text-[10px] mono font-bold text-emerald-400 uppercase"
+                      >Production</span
+                    >
+                  </div>
+                  <button
+                    onclick="expandCol('done')"
+                    class="text-slate-600 hover:text-white text-xs transition"
+                  >
+                    ⛶
+                  </button>
+                </div>
+                <div id="done" class="scroll-v p-6 drop-zone"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <footer id="log-terminal" class="mono flex flex-col shrink-0">
+      <div
+        class="flex justify-between items-center mb-2 border-b border-white/5 pb-2"
+      >
+        <div class="flex items-center gap-4">
+          <span
+            class="text-[9px] font-bold text-indigo-500 uppercase tracking-widest"
+            >PORINOI_SHELL_V8.1</span
+          >
+          <span id="terminal-status" class="text-[9px] text-slate-600 uppercase"
+            >Idle...</span
+          >
+        </div>
+        <button
+          onclick="clearLogs()"
+          class="text-[9px] text-slate-700 hover:text-rose-500 transition"
+        >
+          CLEAR_BUFFER
+        </button>
+      </div>
+      <div
+        id="log-stream"
+        class="scroll-v flex flex-col-reverse text-[10px] opacity-70"
+      ></div>
+    </footer>
+
+    <div
+      id="f-modal"
+      class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-black/95 backdrop-blur-3xl p-6"
+    >
+      <div
+        class="bg-[#0a0a0f] border border-white/10 w-full max-w-2xl rounded-[40px] overflow-hidden shadow-2xl"
+      >
+        <div
+          class="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.02]"
+        >
+          <span class="mono text-[10px] text-slate-500 uppercase"
+            >Commit // New_Node</span
+          >
+          <button
+            onclick="closeFModal()"
+            class="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-slate-500 hover:text-white hover:border-white/30"
+          >
+            ×
+          </button>
+        </div>
+        <div class="p-10 space-y-8">
+          <input
+            type="text"
+            id="f-title"
+            placeholder="Node_Identifier"
+            class="w-full bg-transparent text-4xl font-black text-white outline-none placeholder:text-white/10"
+          />
+          <div class="grid grid-cols-2 gap-6">
+            <div class="space-y-2">
+              <label class="mono text-[9px] text-slate-500 uppercase"
+                >Priority_Level</label
+              >
+              <select
+                id="f-priority"
+                class="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-white mono text-xs outline-none focus:border-indigo-500"
+              >
+                <option value="LOW" class="text-black">Low_Priority</option>
+                <option value="MID" class="text-black" selected>
+                  Normal_Op
+                </option>
+                <option value="HIGH" class="text-black">Critical_Path</option>
+              </select>
+            </div>
+            <div class="space-y-2">
+              <label class="mono text-[9px] text-slate-500 uppercase"
+                >Node_Category</label
+              >
+              <select
+                id="f-cat"
+                class="w-full bg-white/5 border border-white/5 p-4 rounded-2xl text-white mono text-xs outline-none focus:border-indigo-500"
+              >
+                <option value="CORE" class="text-black">Backend_Core</option>
+                <option value="UIUX" class="text-black">
+                  Interface_Design
+                </option>
+                <option value="DB" class="text-black">Database_Relay</option>
+                <option value="OPS" class="text-black">Operations</option>
+              </select>
+            </div>
+          </div>
+          <textarea
+            id="f-content"
+            placeholder="Node_Metadata_Content..."
+            class="w-full h-32 bg-white/[0.02] border border-white/5 p-6 rounded-3xl text-indigo-100 mono text-sm outline-none resize-none focus:border-indigo-500/50"
+          ></textarea>
+          <button
+            onclick="commitFile()"
+            class="w-full bg-indigo-600 py-5 rounded-[24px] text-white font-black text-[11px] uppercase tracking-widest hover:bg-indigo-500 transition-all active:scale-95 shadow-xl shadow-indigo-600/20"
+          >
+            Initialize_Commit
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="p-modal"
+      class="fixed inset-0 z-[110] hidden flex items-center justify-center bg-black/95 backdrop-blur-2xl"
+    >
+      <div
+        class="bg-[#0d0d14] border border-white/10 w-full max-w-sm p-10 rounded-[40px] shadow-2xl"
+      >
+        <div class="text-center mb-8">
+          <p
+            class="mono text-[10px] text-indigo-400 uppercase tracking-[0.3em] mb-2"
+          >
+            Workspace_Init
+          </p>
+          <h3 class="text-xl font-bold text-white">Create New Space</h3>
+        </div>
+        <input
+          type="text"
+          id="p-name"
+          placeholder="Workspace_ID"
+          class="w-full bg-white/5 border border-white/10 p-5 rounded-2xl text-white outline-none mb-6 text-center focus:border-indigo-500 transition-all"
+        />
+        <div class="flex gap-3">
+          <button
+            onclick="closePModal()"
+            class="flex-1 bg-white/5 text-slate-500 py-4 rounded-2xl font-bold text-[10px] uppercase hover:text-white"
+          >
+            Cancel
+          </button>
+          <button
+            onclick="createP()"
+            class="flex-2 bg-indigo-600 text-white px-8 rounded-2xl font-bold text-[10px] uppercase hover:bg-indigo-500 shadow-lg shadow-indigo-600/20"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // DATA KERNEL
+      let db = JSON.parse(localStorage.getItem("porinoi_v8_arch")) || {
+        activeProject: "PORINOI_WEB",
+        projects: { PORINOI_WEB: [] },
+        totalSecs: 0,
+      };
+
+      const sysLog = (msg, type = "info") => {
+        const colors = {
+          success: "text-emerald-400",
+          crit: "text-rose-500",
+          info: "text-indigo-400",
+          sys: "text-slate-500",
+        };
+        const stream = document.getElementById("log-stream");
+        const status = document.getElementById("terminal-status");
+        status.innerText = "Processing...";
+
+        stream.insertAdjacentHTML(
+          "afterbegin",
+          `
+                <div class="py-1 flex gap-3 animate-in fade-in slide-in-from-left-2 duration-300">
+                    <span class="text-slate-800">[${new Date().toLocaleTimeString()}]</span>
+                    <span class="${colors[type]}">> ${msg}</span>
+                </div>
+            `
+        );
+        setTimeout(() => (status.innerText = "Idle"), 1000);
+      };
+
+      const save = () => {
+        localStorage.setItem("porinoi_v8_arch", JSON.stringify(db));
+        document.getElementById(
+          "proj-display"
+        ).innerText = `PROJ: ${db.activeProject}`;
+        
+        // FEATURE: Save indicator pulse
+        const ind = document.getElementById('save-indicator');
+        ind.style.opacity = '1';
+        setTimeout(() => ind.style.opacity = '0', 2000);
+
+        renderProjects();
+        renderCurrentView();
+        renderActivityGrid(); // FEATURE: Update activity grid
+      };
+
+      // TIMER
+      setInterval(() => {
+        db.totalSecs++;
+        const h = Math.floor(db.totalSecs / 3600)
+          .toString()
+          .padStart(2, "0");
+        const m = Math.floor((db.totalSecs % 3600) / 60)
+          .toString()
+          .padStart(2, "0");
+        const s = (db.totalSecs % 60).toString().padStart(2, "0");
+        document.getElementById("session-timer").innerText = `${h}:${m}:${s}`;
+      }, 1000);
+
+      // UI NAVIGATION
+      function navigateTo(id) {
+        document
+          .querySelectorAll(".page-view")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById(`page-${id}`).classList.add("active");
+
+        document.querySelectorAll('[id^="nav-"]').forEach((n) => {
+          n.classList.remove(
+            "bg-indigo-600/10",
+            "text-white",
+            "border-l-4",
+            "border-indigo-500"
+          );
+          n.classList.add("text-slate-400");
+        });
+        const activeNav = document.getElementById(`nav-${id}`);
+        activeNav.classList.add(
+          "bg-indigo-600/10",
+          "text-white",
+          "border-l-4",
+          "border-indigo-500"
+        );
+
+        document.getElementById("page-title").innerText = id;
+        renderCurrentView();
+        gsap.from(`#page-${id}`, { opacity: 0, y: 10, duration: 0.3 });
+      }
+
+      // KANBAN LOGIC
+      let expandedColId = null;
+      function expandCol(id) {
+        const cols = ["todo", "progress", "done"];
+        if (expandedColId === id) {
+          cols.forEach((c) =>
+            document
+              .getElementById(`col-${c}`)
+              .classList.remove("expanded", "hidden-col")
+          );
+          expandedColId = null;
+        } else {
+          cols.forEach((c) => {
+            const el = document.getElementById(`col-${c}`);
+            el.classList.toggle("expanded", c === id);
+            el.classList.toggle("hidden-col", c !== id);
+          });
+          expandedColId = id;
+        }
+      }
+
+      function renderBoard() {
+        const cols = { todo: "", progress: "", done: "" };
+        const activeTasks = db.projects[db.activeProject] || [];
+
+        activeTasks.forEach((t) => {
+          const priorityColor =
+            t.priority === "HIGH"
+              ? "text-rose-500"
+              : t.priority === "MID"
+              ? "text-indigo-400"
+              : "text-slate-500";
+          cols[t.status] += `
+                    <div class="task-card" data-id="${t.id}">
+                        <div class="flex justify-between items-start mb-4">
+                            <span class="text-[8px] mono font-bold tracking-[0.2em] ${priorityColor}">// ${t.priority}</span>
+                            <button onclick="delF(${t.id})" class="text-slate-800 hover:text-rose-500 transition">×</button>
+                        </div>
+                        <h4 class="text-xs font-black text-white mb-2 uppercase tracking-tight">${t.title}</h4>
+                        <p class="text-[10px] text-slate-500 mono mb-4 line-clamp-2">${t.info}</p>
+                        <div class="flex justify-between items-center pt-4 border-t border-white/5">
+                            <span class="text-[8px] mono text-slate-600">ID: ${t.serial}</span>
+                            <span class="text-[8px] mono px-2 py-1 bg-white/5 rounded text-indigo-400">${t.cat}</span>
+                        </div>
+                    </div>`;
+        });
+
+        ["todo", "progress", "done"].forEach((id) => {
+          const el = document.getElementById(id);
+          el.innerHTML =
+            cols[id] ||
+            `<div class="h-full flex items-center justify-center opacity-10 mono text-[9px]">EMPTY_BUFFER</div>`;
+          Sortable.create(el, {
+            group: "nodes",
+            animation: 300,
+            onEnd: (e) => {
+              const task = db.projects[db.activeProject].find(
+                (t) => t.id == e.item.dataset.id
+              );
+              if (task && task.status !== e.to.id) {
+                task.status = e.to.id;
+                sysLog(`Node ${task.serial} migrated to ${e.to.id}`, "info");
+                save();
+              }
+            },
+          });
+        });
+      }
+
+      // ANALYTICS ENGINE
+      function renderDashboard() {
+        const tasks = db.projects[db.activeProject] || [];
+        const total = tasks.length || 1;
+        const done = tasks.filter((t) => t.status === "done").length;
+        const p = Math.round((done / total) * 100);
+
+        document.getElementById("velocity-val").innerText = p + "%";
+        const ctx = document.getElementById("gaugeChart").getContext("2d");
+        if (window.g) window.g.destroy();
+        window.g = new Chart(ctx, {
+          type: "doughnut",
+          data: {
+            datasets: [
+              {
+                data: [p, 100 - p],
+                backgroundColor: ["#6366f1", "#12121a"],
+                borderWeight: 0,
+                borderRadius: 15,
+              },
+            ],
+          },
+          options: {
+            cutout: "82%",
+            plugins: { legend: false },
+            animation: { duration: 1500 },
+          },
+        });
+
+        const stats = ["todo", "progress", "done"]
+          .map((s) => {
+            const count = tasks.filter((t) => t.status === s).length;
+            const pct = Math.round((count / total) * 100);
+            const colors = {
+              todo: "bg-slate-700",
+              progress: "bg-indigo-500",
+              done: "bg-emerald-500",
+            };
+            const titles = {
+              todo: "Buffer_Nodes",
+              progress: "Active_Deployment",
+              done: "Finalized_Production",
+            };
+
+            return `
+                    <div>
+                        <div class="flex justify-between mono text-[9px] uppercase text-slate-500 mb-4">
+                            <span>${titles[s]}</span>
+                            <span class="text-white">${count} UNITS / ${pct}%</span>
+                        </div>
+                        <div class="h-2 bg-white/5 rounded-full overflow-hidden">
+                            <div class="h-full ${colors[s]} transition-all duration-1000" style="width:${pct}%"></div>
+                        </div>
+                    </div>`;
+          })
+          .join("");
+        document.getElementById("stats-bars").innerHTML = stats;
+      }
+
+      function renderProjects() {
+        document.getElementById("project-list").innerHTML = Object.keys(
+          db.projects
+        )
+          .map(
+            (p) => `
+                <div onclick="db.activeProject='${p}';save()" class="group p-3 rounded-xl text-[10px] mono flex justify-between cursor-pointer transition-all ${
+              db.activeProject === p
+                ? "bg-indigo-600/10 text-white border border-indigo-500/20 shadow-lg shadow-indigo-500/5"
+                : "text-slate-500 hover:bg-white/5"
+            }">
+                    <span class="flex items-center gap-2">
+                        <span class="w-1 h-1 rounded-full ${
+                          db.activeProject === p
+                            ? "bg-indigo-500"
+                            : "bg-slate-700"
+                        }"></span>
+                        ${p}
+                    </span>
+                    <button onclick="delP('${p}', event)" class="opacity-0 group-hover:opacity-100 text-rose-500 hover:scale-125 transition">×</button>
+                </div>`
+          )
+          .join("");
+      }
+
+      function renderCurrentView() {
+        const activeId = document.querySelector(".page-view.active").id;
+        if (activeId === "page-dashboard") renderDashboard();
+        if (activeId === "page-kanban") renderBoard();
+      }
+
+      // ACTIONS
+      function commitFile() {
+        const title = document.getElementById("f-title").value;
+        const content = document.getElementById("f-content").value;
+        const priority = document.getElementById("f-priority").value;
+        const cat = document.getElementById("f-cat").value;
+
+        if (!title) return;
+        const serial = `NOD-${Math.floor(Math.random() * 9000 + 1000)}`;
+        db.projects[db.activeProject].push({
+          id: Date.now(),
+          serial,
+          title,
+          info: content,
+          priority,
+          cat,
+          status: "todo",
+        });
+        save();
+        closeFModal();
+        sysLog(`Commencing deployment of node ${serial}`, "success");
+        document.getElementById("f-title").value = "";
+        document.getElementById("f-content").value = "";
+      }
+
+      function createP() {
+        const n = document.getElementById("p-name").value;
+        if (n && !db.projects[n]) {
+          db.projects[n] = [];
+          db.activeProject = n;
+          save();
+          closePModal();
+          sysLog(`Initialized Environment Vector: ${n}`, "success");
+          document.getElementById("p-name").value = "";
+        }
+      }
+
+      function toggleSidebar() {
+        document.getElementById("sidebar").classList.toggle("collapsed");
+      }
+      function toggleTerminal() {
+        document.body.classList.toggle("terminal-hidden");
+      }
+      function openFModal() {
+        document.getElementById("f-modal").classList.remove("hidden");
+      }
+      function closeFModal() {
+        document.getElementById("f-modal").classList.add("hidden");
+      }
+      function openPModal() {
+        document.getElementById("p-modal").classList.remove("hidden");
+      }
+      function closePModal() {
+        document.getElementById("p-modal").classList.add("hidden");
+      }
+      function delP(n, e) {
+        e.stopPropagation();
+        if (Object.keys(db.projects).length > 1) {
+          delete db.projects[n];
+          if (db.activeProject === n)
+            db.activeProject = Object.keys(db.projects)[0];
+          save();
+          sysLog(`Purged Environment: ${n}`, "crit");
+        }
+      }
+      function delF(id) {
+        db.projects[db.activeProject] = db.projects[db.activeProject].filter(
+          (f) => f.id !== id
+        );
+        save();
+        sysLog(`De-linked node ${id}`, "crit");
+      }
+      function clearLogs() {
+        document.getElementById("log-stream").innerHTML = "";
+      }
+
+      // FEATURE: ACTIVITY GRID LOGIC
+      function renderActivityGrid() {
+        const grid = document.getElementById('activity-grid');
+        grid.innerHTML = '';
+        const nodeCount = db.projects[db.activeProject].length;
+        for(let i=0; i<28; i++) {
+          const isActive = Math.random() < (nodeCount / 20);
+          grid.innerHTML += `<div class="h-4 rounded-sm ${isActive ? 'bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]' : 'bg-white/5'} transition-all duration-500"></div>`;
+        }
+      }
+
+      // FEATURE: SEARCH FILTER LOGIC
+      function filterNodes() {
+        const query = document.getElementById('node-search').value.toLowerCase();
+        const cards = document.querySelectorAll('.task-card');
+        cards.forEach(card => {
+          const text = card.innerText.toLowerCase();
+          card.style.display = text.includes(query) ? 'block' : 'none';
+        });
+      }
+
+      // FEATURE: NEURAL CANVAS ANIMATION
+      const canvas = document.getElementById('neural-canvas');
+      const ctx = canvas.getContext('2d');
+      let dots = [];
+
+      function initCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        dots = [];
+        for(let i=0; i<50; i++) {
+          dots.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: (Math.random() - 0.5) * 0.5
+          });
+        }
+      }
+
+      function drawCanvas() {
+        ctx.clearRect(0,0, canvas.width, canvas.height);
+        ctx.fillStyle = '#6366f1';
+        ctx.strokeStyle = 'rgba(99,102,241,0.1)';
+        
+        dots.forEach((d, i) => {
+          d.x += d.vx;
+          d.y += d.vy;
+          if(d.x < 0 || d.x > canvas.width) d.vx *= -1;
+          if(d.y < 0 || d.y > canvas.height) d.vy *= -1;
+          
+          ctx.beginPath();
+          ctx.arc(d.x, d.y, 1, 0, Math.PI*2);
+          ctx.fill();
+
+          dots.slice(i+1).forEach(d2 => {
+             let dist = Math.hypot(d.x - d2.x, d.y - d2.y);
+             if(dist < 150) {
+               ctx.beginPath();
+               ctx.moveTo(d.x, d.y);
+               ctx.lineTo(d2.x, d2.y);
+               ctx.stroke();
+             }
+          });
+        });
+        requestAnimationFrame(drawCanvas);
+      }
+
+      window.onload = () => {
+        save();
+        initCanvas();
+        drawCanvas();
+        renderActivityGrid();
+        sysLog("Porinoi Architect S8.1 - Singularity Active", "success");
+        navigateTo("dashboard");
+      };
+
+      window.onresize = initCanvas;
+    </script>
+  </body>
+</html>
